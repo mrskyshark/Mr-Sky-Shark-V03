@@ -3,12 +3,15 @@ import google.generativeai as genai
 import zipfile
 import io
 
+# إعدادات الصفحة
 st.set_page_config(page_title="Mr Sky Shark V03", page_icon="🦈", layout="wide")
-st.title("🦈 Mr Sky Shark V03 - Advanced SRT Engine")
+st.title("🦈 Mr Sky Shark V03 - Final Stable Edition")
 
-# --- تهيئة الذاكرة الدائمة ---
+# --- تهيئة الذاكرة الدائمة (لمنع اختفاء الملفات) ---
 if "zip_data" not in st.session_state:
     st.session_state.zip_data = None
+if "processing_complete" not in st.session_state:
+    st.session_state.processing_complete = False
 
 # --- الإعدادات الجانبية ---
 st.sidebar.header("⚙️ الإعدادات (Settings)")
@@ -16,19 +19,19 @@ provider = st.sidebar.selectbox("اختر محرك الترجمة:", ["Gemini (G
 api_key = st.sidebar.text_input("مفتاح الـ API:", type="password")
 model_choice = st.sidebar.text_input("اسم النموذج:", value="gemini-1.5-pro")
 
-# قاموس المصطلحات والبرومبت
 st.sidebar.subheader("📖 قاموس المصطلحات (Glossary)")
-glossary_input = st.sidebar.text_area("أمثلة: Crown Prince: ولي العهد", height=150)
+st.sidebar.info("صيغة القاموس: المصطلح الإنجليزي:الترجمة العربية")
+glossary_input = st.sidebar.text_area("أدخل المصطلحات هنا:", height=150)
 
+# --- واجهة تخصيص البرومبت ---
+st.subheader("📝 تخصيص البرومبت (Prompt Customization)")
 default_prompt = """You are an expert subtitle translator. Translate to eloquent Arabic.
 Strictly maintain SRT structure (Index, Timecode, Text). 
 Do not add conversational filler.
 CRITICAL: 1-to-1 mapping. Do not merge or omit lines."""
-
-st.subheader("📝 تخصيص البرومبت (Prompt Customization)")
 custom_prompt = st.text_area("البرومبت الموجه للذكاء الاصطناعي:", value=default_prompt, height=150)
 
-# --- الدوال البرمجية ---
+# --- وظائف معالجة البيانات ---
 def get_full_instruction(custom_prompt, glossary_text):
     glossary = {}
     for line in glossary_text.split('\n'):
@@ -52,14 +55,18 @@ def split_srt_into_blocks(srt_content, blocks_per_chunk):
         chunks.append("\n\n".join(blocks[i:i + blocks_per_chunk]))
     return chunks
 
-# --- واجهة العمل ---
+# --- منطقة العمل ---
 uploaded_files = st.file_uploader("ارفع ملفات الترجمة (.srt)", type=["srt"], accept_multiple_files=True)
-batch_size = st.number_input("حجم الدفعة (عدد الكتل):", min_value=5, max_value=100, value=25)
+batch_size = st.number_input("حجم الدفعة (عدد الكتل لكل طلب):", min_value=5, max_value=100, value=25)
 
-if uploaded_files and st.button("🚀 ابدأ الترجمة الشاملة"):
+# زر الترجمة
+if st.button("🚀 ابدأ الترجمة الشاملة"):
     if not api_key:
         st.error("⚠️ يرجى إدخال مفتاح الـ API.")
+    elif not uploaded_files:
+        st.warning("⚠️ يرجى رفع ملفات الترجمة أولاً.")
     else:
+        st.session_state.processing_complete = False
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name=model_choice)
         
@@ -83,19 +90,21 @@ if uploaded_files and st.button("🚀 ابدأ الترجمة الشاملة"):
                     except Exception as e:
                         st.error(f"خطأ في {file.name}: {e}")
                         translated_blocks.append(chunk) 
-                    
                     progress_bar.progress((idx + 1) / len(chunks))
                 
                 final_srt_content = "\n\n".join(translated_blocks)
                 zf.writestr(f"Translated_{file.name}", final_srt_content)
                 st.success(f"✅ تم الانتهاء من {file.name}")
 
-        # حفظ النتيجة في الذاكرة الدائمة
         st.session_state.zip_data = zip_buffer.getvalue()
+        st.session_state.processing_complete = True
         st.balloons()
+        st.rerun() # تحديث الصفحة لإظهار زر التحميل
 
-# --- زر التحميل الدائم ---
-if st.session_state.zip_data is not None:
+# --- زر التحميل (دائم) ---
+if st.session_state.processing_complete and st.session_state.zip_data:
+    st.divider()
+    st.success("🎉 تمت المهمة بنجاح! جميع الملفات جاهزة.")
     st.download_button(
         label="📥 تحميل الملفات المترجمة (ZIP)",
         data=st.session_state.zip_data,
@@ -104,4 +113,5 @@ if st.session_state.zip_data is not None:
     )
     if st.button("🔄 مسح النتائج للبدء من جديد"):
         st.session_state.zip_data = None
+        st.session_state.processing_complete = False
         st.rerun()
